@@ -1,227 +1,241 @@
+<!-- Save as chat_app.html -->
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Ultimate Chat App</title>
+  <title>Multi-User Chat App with Calls</title>
   <style>
-    body { font-family: Arial, sans-serif; margin: 0; padding: 0; background: #f0f0f0; }
-    #loginScreen, #chatScreen { display: none; padding: 20px; }
-    #loginScreen { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; }
-    #chatScreen { height: 100vh; display: flex; flex-direction: column; }
-    input, button { padding: 10px; margin: 5px; }
-    #messages { flex-grow: 1; overflow-y: auto; border: 1px solid #ccc; padding: 10px; margin-bottom: 10px; background: white; }
-    .message { padding: 5px; margin: 3px; border-bottom: 1px solid #eee; }
-    .system { color: gray; font-style: italic; }
-    .typing { color: blue; font-style: italic; }
-    .online { color: green; }
-    .offline { color: red; }
-    #localVideo, #remoteVideo { width: 100px; height: 80px; background: black; }
-    #videoContainer { display: flex; gap: 10px; margin-top: 10px; }
+    body { font-family: sans-serif; background: #f0f0f0; padding: 20px; }
+    #chat, #users, #status { margin: 10px 0; }
+    .msg { padding: 5px; margin: 2px; background: #fff; border-radius: 4px; }
+    #localVideo, #remoteVideo { width: 45%; margin: 10px; }
+    #videoContainer, #audioContainer { display: none; }
+    .online { color: green; } .offline { color: red; }
+    .typing { font-style: italic; }
+    button { margin: 5px; }
   </style>
 </head>
 <body>
 
-<div id="loginScreen">
-  <h2>Enter your username</h2>
-  <input type="text" id="usernameInput" placeholder="Your name"/>
-  <button onclick="login()">Enter</button>
+<h2>Chat App with Video & Audio Call</h2>
+
+<div>
+  Username: <input id="username" placeholder="Enter your name" />
+  <button onclick="register()">Join Chat</button>
 </div>
 
-<div id="chatScreen">
-  <div>
-    <strong>Logged in as:</strong> <span id="myName"></span>
-    <span style="float:right">
-      Chat with: <input type="text" id="chatWith" placeholder="Username" />
-    </span>
+<div id="main" style="display:none;">
+  <div id="status">Status: <span id="myStatus">Offline</span></div>
+  <div id="users"></div>
+
+  <div id="chatBox">
+    <div id="chat" style="height:200px; overflow-y:scroll;"></div>
+    <input id="message" placeholder="Type message..." oninput="sendTyping()" />
+    <button onclick="sendMessage()">Send</button>
+    <div id="typingStatus"></div>
   </div>
 
-  <div id="status">
-    <span id="otherUserStatus" class="offline">Offline</span>
-    <span id="typingStatus" class="typing"></span>
-  </div>
-
-  <div id="messages"></div>
-
-  <input type="text" id="messageInput" placeholder="Type a message..." oninput="sendTyping()" />
-  <button onclick="sendMessage()">Send</button>
-  <button onclick="startAudioCall()">Audio Call</button>
-  <button onclick="startVideoCall()">Video Call</button>
+  <h3>Call Options</h3>
+  <button onclick="startVideoCall()">Start Video Call</button>
+  <button onclick="startAudioCall()">Start Audio Call</button>
+  <button onclick="endCall()">End Call</button>
 
   <div id="videoContainer">
     <video id="localVideo" autoplay muted></video>
     <video id="remoteVideo" autoplay></video>
   </div>
+
+  <div id="audioContainer">
+    <audio id="remoteAudio" autoplay></audio>
+  </div>
 </div>
 
-<!-- Firebase & WebRTC JS -->
 <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
 
 <script>
-// For Firebase JS SDK v7.20.0 and later, measurementId is optional
-const firebaseConfig = {
-  apiKey: "AIzaSyBlqw_OlPWzL1Gvv4n0068BVlnstoFqdsw",
-  authDomain: "student-attendance-b1e33.firebaseapp.com",
-  databaseURL: "https://student-attendance-b1e33-default-rtdb.firebaseio.com",
-  projectId: "student-attendance-b1e33",
-  storageBucket: "student-attendance-b1e33.firebasestorage.app",
-  messagingSenderId: "601501410721",
-  appId: "1:601501410721:web:809bd651e283675b8c57e0",
-  measurementId: "G-2R0Q549S7B"
-};
+  const firebaseConfig = {
+    apiKey: "AIzaSyD_5OXqGIcR2yH_nGC8GVgmLwJfJaQnmuw",
+    authDomain: "student-dashboard-821ae.firebaseapp.com",
+    projectId: "student-dashboard-821ae",
+    databaseURL: "https://student-dashboard-821ae-default-rtdb.firebaseio.com",
+    storageBucket: "student-dashboard-821ae.appspot.com",
+    messagingSenderId: "785480958148",
+    appId: "1:785480958148:web:bb187cfe8d969aafca0991"
+  };
   firebase.initializeApp(firebaseConfig);
   const db = firebase.database();
 
-  let myName = "", chatWith = "", typingTimeout;
-  const messagesEl = document.getElementById("messages");
+  let username = '';
+  let typingTimeout = null;
 
-  function login() {
-    myName = document.getElementById("usernameInput").value.trim();
-    if (!myName) return alert("Enter a valid username");
-    document.getElementById("loginScreen").style.display = "none";
-    document.getElementById("chatScreen").style.display = "block";
-    document.getElementById("myName").textContent = myName;
-
-    db.ref("presence/" + myName).set(true);
-    db.ref("presence/" + myName).onDisconnect().remove();
-    listenForTyping();
+  function register() {
+    username = document.getElementById('username').value.trim();
+    if (!username) return alert("Enter username!");
+    document.getElementById('main').style.display = 'block';
+    db.ref('users/' + username).set({ online: true });
+    db.ref('users/' + username).onDisconnect().remove();
+    document.getElementById('myStatus').textContent = 'Online';
+    listenForUsers();
     listenForMessages();
-    monitorPresence();
+    listenTyping();
+    listenForCalls();
   }
 
   function sendMessage() {
-    const input = document.getElementById("messageInput");
-    if (!input.value.trim()) return;
-    const msg = {
-      from: myName,
-      to: chatWith,
-      text: input.value,
-      timestamp: Date.now()
-    };
-    db.ref("messages").push(msg);
-    input.value = "";
-  }
-
-  function sendTyping() {
-    db.ref("typing/" + chatWith).set(myName);
-    clearTimeout(typingTimeout);
-    typingTimeout = setTimeout(() => {
-      db.ref("typing/" + chatWith).set("");
-    }, 3000);
-  }
-
-  function listenForTyping() {
-    db.ref("typing/" + myName).on("value", snap => {
-      document.getElementById("typingStatus").textContent = snap.val() ? snap.val() + " is typing..." : "";
-    });
+    const msg = document.getElementById('message').value.trim();
+    if (!msg) return;
+    const id = Date.now();
+    db.ref('messages/' + id).set({ user: username, text: msg, seen: false });
+    document.getElementById('message').value = '';
   }
 
   function listenForMessages() {
-    db.ref("messages").on("child_added", snap => {
+    db.ref('messages').on('child_added', snap => {
       const msg = snap.val();
-      if ((msg.from === myName && msg.to === chatWith) || (msg.from === chatWith && msg.to === myName)) {
-        const div = document.createElement("div");
-        div.className = "message";
-        div.textContent = `${msg.from}: ${msg.text}`;
-        messagesEl.appendChild(div);
-        messagesEl.scrollTop = messagesEl.scrollHeight;
+      const id = snap.key;
+      const div = document.createElement('div');
+      div.className = 'msg';
+      div.textContent = `${msg.user}: ${msg.text}`;
+      document.getElementById('chat').appendChild(div);
+      document.getElementById('chat').scrollTop = 9999;
 
-        if (msg.to === myName) {
-          setTimeout(() => snap.ref.remove(), 60000);
-        }
+      if (msg.user !== username && !msg.seen) {
+        db.ref('messages/' + id).update({ seen: true });
+        setTimeout(() => db.ref('messages/' + id).remove(), 60000);
       }
     });
   }
 
-  function monitorPresence() {
-    setInterval(() => {
-      chatWith = document.getElementById("chatWith").value.trim();
-      if (chatWith) {
-        db.ref("presence/" + chatWith).once("value").then(snap => {
-          document.getElementById("otherUserStatus").textContent = snap.exists() ? "Online" : "Offline";
-          document.getElementById("otherUserStatus").className = snap.exists() ? "online" : "offline";
+  function listenForUsers() {
+    db.ref('users').on('value', snap => {
+      const users = snap.val();
+      let html = "<b>Users:</b><br>";
+      for (let u in users) {
+        if (u !== username) html += `${u} <span class="${users[u].online ? 'online' : 'offline'}">${users[u].online ? 'Online' : 'Offline'}</span><br>`;
+      }
+      document.getElementById('users').innerHTML = html;
+    });
+  }
+
+  function sendTyping() {
+    db.ref('typing').set({ user: username });
+    clearTimeout(typingTimeout);
+    typingTimeout = setTimeout(() => db.ref('typing').remove(), 2000);
+  }
+
+  function listenTyping() {
+    db.ref('typing').on('value', snap => {
+      const val = snap.val();
+      document.getElementById('typingStatus').textContent = val && val.user !== username ? `${val.user} is typing...` : '';
+    });
+  }
+
+  // Call functionality
+  let localStream = null;
+  let peer = null;
+
+  async function startVideoCall() {
+    document.getElementById('videoContainer').style.display = 'block';
+    document.getElementById('audioContainer').style.display = 'none';
+    localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+    document.getElementById('localVideo').srcObject = localStream;
+    makePeerConnection();
+    db.ref('calls').set({ from: username, type: 'video' });
+  }
+
+  async function startAudioCall() {
+    document.getElementById('audioContainer').style.display = 'block';
+    document.getElementById('videoContainer').style.display = 'none';
+    localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    makePeerConnection();
+    db.ref('calls').set({ from: username, type: 'audio' });
+  }
+
+  function makePeerConnection() {
+    peer = new RTCPeerConnection();
+    localStream.getTracks().forEach(track => peer.addTrack(track, localStream));
+
+    peer.ontrack = event => {
+      const remoteStream = new MediaStream([event.track]);
+      if (event.track.kind === "video") document.getElementById('remoteVideo').srcObject = remoteStream;
+      else if (event.track.kind === "audio") document.getElementById('remoteAudio').srcObject = remoteStream;
+    };
+
+    peer.onicecandidate = e => {
+      if (e.candidate) {
+        db.ref('ice/' + username).push(e.candidate.toJSON());
+      }
+    };
+
+    peer.createOffer().then(offer => {
+      peer.setLocalDescription(offer);
+      db.ref('offers/' + username).set(offer);
+    });
+  }
+
+  function listenForCalls() {
+    db.ref('calls').on('value', async snap => {
+      const call = snap.val();
+      if (call && call.from !== username) {
+        const accept = confirm(`${call.from} is calling (${call.type}). Accept?`);
+        if (!accept) return;
+
+        localStream = await navigator.mediaDevices.getUserMedia({
+          video: call.type === 'video',
+          audio: true
+        });
+
+        if (call.type === 'video') {
+          document.getElementById('videoContainer').style.display = 'block';
+          document.getElementById('audioContainer').style.display = 'none';
+          document.getElementById('localVideo').srcObject = localStream;
+        } else {
+          document.getElementById('audioContainer').style.display = 'block';
+          document.getElementById('videoContainer').style.display = 'none';
+        }
+
+        peer = new RTCPeerConnection();
+        localStream.getTracks().forEach(track => peer.addTrack(track, localStream));
+        peer.ontrack = e => {
+          const remoteStream = new MediaStream([e.track]);
+          if (e.track.kind === 'video') document.getElementById('remoteVideo').srcObject = remoteStream;
+          else document.getElementById('remoteAudio').srcObject = remoteStream;
+        };
+        peer.onicecandidate = e => {
+          if (e.candidate) db.ref('ice/' + call.from).push(e.candidate.toJSON());
+        };
+
+        const offer = (await db.ref('offers/' + call.from).get()).val();
+        peer.setRemoteDescription(offer);
+        const answer = await peer.createAnswer();
+        peer.setLocalDescription(answer);
+        db.ref('answers/' + call.from).set(answer);
+
+        db.ref('ice/' + username).on('child_added', snap => {
+          peer.addIceCandidate(new RTCIceCandidate(snap.val()));
         });
       }
-    }, 3000);
-  }
-
-  // WebRTC Call Setup
-  let localStream, peerConnection;
-  const config = { iceServers: [{ urls: "stun:stun.l.google.com:19302" }] };
-
-  async function startCall(isVideo) {
-    chatWith = document.getElementById("chatWith").value.trim();
-    localStream = await navigator.mediaDevices.getUserMedia({ video: isVideo, audio: true });
-    document.getElementById("localVideo").srcObject = localStream;
-    peerConnection = new RTCPeerConnection(config);
-
-    localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
-
-    peerConnection.ontrack = event => {
-      document.getElementById("remoteVideo").srcObject = event.streams[0];
-    };
-
-    peerConnection.onicecandidate = event => {
-      if (event.candidate) {
-        db.ref(`calls/${chatWith}/candidates`).push({ from: myName, candidate: event.candidate });
-      }
-    };
-
-    const offer = await peerConnection.createOffer();
-    await peerConnection.setLocalDescription(offer);
-    db.ref(`calls/${chatWith}`).set({ from: myName, offer });
-  }
-
-  db.ref("calls").on("child_added", async snap => {
-    const call = snap.val();
-    if (call.to === myName && call.offer) {
-      if (!confirm(`${call.from} is calling you. Accept?`)) return;
-      localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-      document.getElementById("localVideo").srcObject = localStream;
-      peerConnection = new RTCPeerConnection(config);
-
-      localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
-      peerConnection.ontrack = event => {
-        document.getElementById("remoteVideo").srcObject = event.streams[0];
-      };
-      peerConnection.onicecandidate = e => {
-        if (e.candidate) {
-          db.ref(`calls/${call.from}/candidates`).push({ from: myName, candidate: e.candidate });
-        }
-      };
-
-      await peerConnection.setRemoteDescription(new RTCSessionDescription(call.offer));
-      const answer = await peerConnection.createAnswer();
-      await peerConnection.setLocalDescription(answer);
-      db.ref(`calls/${call.from}/answer`).set(answer);
-    }
-  });
-
-  function startVideoCall() {
-    startCall(true);
-  }
-
-  function startAudioCall() {
-    startCall(false);
-  }
-
-  db.ref("calls").on("child_changed", async snap => {
-    const call = snap.val();
-    if (call.answer && peerConnection) {
-      await peerConnection.setRemoteDescription(new RTCSessionDescription(call.answer));
-    }
-  });
-
-  db.ref("calls").on("child_added", snap => {
-    const id = snap.key;
-    snap.ref.child("candidates").on("child_added", snap => {
-      const data = snap.val();
-      if (data.from !== myName && peerConnection) {
-        peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate));
-      }
     });
-  });
+
+    db.ref('answers/' + username).on('value', snap => {
+      const answer = snap.val();
+      if (answer && peer) peer.setRemoteDescription(answer);
+    });
+
+    db.ref('ice/' + username).on('child_added', snap => {
+      if (peer) peer.addIceCandidate(new RTCIceCandidate(snap.val()));
+    });
+  }
+
+  function endCall() {
+    if (peer) peer.close();
+    document.getElementById('videoContainer').style.display = 'none';
+    document.getElementById('audioContainer').style.display = 'none';
+    db.ref('calls').remove();
+    db.ref('offers').remove();
+    db.ref('answers').remove();
+    db.ref('ice').remove();
+  }
 </script>
 </body>
 </html>
