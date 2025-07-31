@@ -1,96 +1,54 @@
-<!DOCTYPE html>
-<html>
+<!DOCTYPE html><html lang="en">
 <head>
-  <title>Chatting</title>
-  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Real-Time Chat with Video/Audio & Media</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
   <style>
-    body {
-      font-family: 'Segoe UI', sans-serif;
-      background: linear-gradient(to right, #dfe9f3, #ffffff);
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      height: 100vh;
-      margin: 0;
-    }
-    #chat-container {
-      width: 400px;
-      background: #fff;
-      border-radius: 15px;
-      padding: 20px;
-      box-shadow: 0 8px 24px rgba(0,0,0,0.1);
-    }
-    h2 {
-      text-align: center;
-      color: #333;
-    }
-    #username, #message {
-      width: 100%;
-      padding: 10px;
-      margin-bottom: 10px;
-      border-radius: 8px;
-      border: 1px solid #ccc;
-    }
-    #send {
-      width: 100%;
-      padding: 10px;
-      background-color: #1e88e5;
-      color: white;
-      border: none;
-      border-radius: 8px;
-      cursor: pointer;
-    }
-    #send:hover {
-      background-color: #1565c0;
-    }
-    #typing-status, #active-status {
-      font-size: 13px;
-      color: #888;
-      height: 18px;
-      margin-bottom: 5px;
-    }
-    #messages {
-      height: 250px;
-      overflow-y: auto;
-      border: 1px solid #ccc;
-      border-radius: 8px;
-      padding: 10px;
-      background: #f9f9f9;
-      margin-bottom: 10px;
-    }
-    .message {
-      margin: 6px 0;
-      font-size: 14px;
-    }
-    .me {
-      text-align: right;
-      color: #1e88e5;
-    }
-    .other {
-      text-align: left;
-      color: #43a047;
-    }
-    .timestamp {
-      font-size: 10px;
-      color: gray;
-      display: block;
-    }
+    body { font-family: 'Segoe UI'; background: #1e1e2f; color: white; }
+    .chat-box { height: 60vh; overflow-y: auto; padding: 1rem; background: #2e2e3f; border-radius: 10px; }
+    .chat-input { border-radius: 10px; }
+    .typing { font-style: italic; color: #aaa; }
+    .message { margin: 0.5rem 0; }
+    .message.you { text-align: right; color: #5fd17b; }
+    .message.other { text-align: left; color: #ffd479; }
+    .video-container { display: flex; gap: 1rem; margin: 1rem 0; }
+    video { width: 45%; border: 2px solid #fff; border-radius: 10px; }
+    .status { font-size: 0.9rem; margin-left: 1rem; color: #28f0c2; }
   </style>
 </head>
 <body>
-  <div id="chat-container">
-    <h2>Chat with 1-Minute Delete</h2>
-    <input type="text" id="username" placeholder="Enter your name" />
-    <div id="active-status"></div>
-    <div id="typing-status"></div>
-    <div id="messages"></div>
-    <input type="text" id="message" placeholder="Type your message..." />
-    <button id="send">Send</button>
-  </div>
+  <div class="container mt-4">
+    <h3 class="text-center">🔴 Real-Time Chat + Video/Audio + Photo</h3><div class="mb-3">
+  <input id="username" class="form-control" placeholder="Enter your name" />
+</div>
 
-  <script>
-    // ✅ Your Firebase Config Here
+<div id="status" class="status">Not connected</div>
+<div id="typingStatus" class="typing"></div>
+
+<div class="chat-box" id="chatBox"></div>
+<div class="d-flex gap-2 mt-2">
+  <input id="messageInput" class="form-control chat-input" placeholder="Type a message..." />
+  <button class="btn btn-primary" onclick="sendMessage()">Send</button>
+</div>
+<div class="d-flex gap-2 mt-2">
+  <input type="file" id="fileInput" accept="image/*" class="form-control" />
+  <button class="btn btn-secondary" onclick="sendImage()">Send Photo</button>
+  <button class="btn btn-info" onclick="openCamera()">Camera</button>
+</div>
+
+<div class="video-container">
+  <video id="localVideo" autoplay muted></video>
+  <video id="remoteVideo" autoplay></video>
+</div>
+<div class="d-flex gap-2">
+  <button class="btn btn-success" onclick="startCall()">Start Call</button>
+  <button class="btn btn-danger" onclick="endCall()">End Call</button>
+</div>
+
+  </div><audio id="notifySound" src="https://notificationsounds.com/notification-sounds/piece-of-cake-611/download/mp3" preload="auto"></audio>
+
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>  <script>
     // For Firebase JS SDK v7.20.0 and later, measurementId is optional
 const firebaseConfig = {
   apiKey: "AIzaSyBlqw_OlPWzL1Gvv4n0068BVlnstoFqdsw",
@@ -102,97 +60,147 @@ const firebaseConfig = {
   appId: "1:601501410721:web:809bd651e283675b8c57e0",
   measurementId: "G-2R0Q549S7B"
 };
-
     firebase.initializeApp(firebaseConfig);
     const db = firebase.database();
-    const messagesRef = db.ref("chat/messages");
-    const typingRef = db.ref("chat/typing");
-    const statusRef = db.ref("chat/status");
 
     const usernameInput = document.getElementById("username");
-    const messageInput = document.getElementById("message");
-    const sendButton = document.getElementById("send");
-    const messagesDiv = document.getElementById("messages");
-    const typingStatus = document.getElementById("typing-status");
-    const activeStatus = document.getElementById("active-status");
+    const messageInput = document.getElementById("messageInput");
+    const chatBox = document.getElementById("chatBox");
+    const notifySound = document.getElementById("notifySound");
+    const status = document.getElementById("status");
+    const typingStatus = document.getElementById("typingStatus");
 
     let username = "";
-
-    // Send message
-    sendButton.onclick = () => {
-      username = usernameInput.value.trim();
-      const text = messageInput.value.trim();
-      if (!username || !text) return;
-
-      const timestamp = new Date().toLocaleTimeString();
-
-      messagesRef.push({
-        name: username,
-        text: text,
-        time: timestamp
-      });
-
-      messageInput.value = "";
-      typingRef.set("");
-    };
-
-    // Display messages and auto-delete after 1 minute (only for receiver)
-    messagesRef.on("child_added", (snapshot) => {
-      const msg = snapshot.val();
-      const key = snapshot.key;
-      username = usernameInput.value.trim();
-      if (!username) return;
-
-      const msgDiv = document.createElement("div");
-      const isMe = msg.name === username;
-      msgDiv.className = "message " + (isMe ? "me" : "other");
-      msgDiv.innerHTML = `<strong>${isMe ? "You" : msg.name}:</strong> ${msg.text} <span class="timestamp">${msg.time}</span>`;
-      messagesDiv.appendChild(msgDiv);
-      messagesDiv.scrollTop = messagesDiv.scrollHeight;
-
-      // Delete after 1 minute ONLY if received (not sender)
-      if (!isMe) {
-        setTimeout(() => messagesRef.child(key).remove(), 60000); // 60 sec delay
-      }
+    usernameInput.addEventListener("change", () => {
+      username = usernameInput.value;
+      db.ref(`users/${username}`).set({ online: true });
+      db.ref(`users/${username}`).onDisconnect().remove();
+      status.innerText = `${username} is online`;
     });
 
-    // Typing indicator
     messageInput.addEventListener("input", () => {
-      username = usernameInput.value.trim();
-      typingRef.set(username ? `${username} is typing...` : "");
+      db.ref("typing").set(username);
+      setTimeout(() => db.ref("typing").set(""), 2000);
     });
-    messageInput.addEventListener("blur", () => typingRef.set(""));
 
-    typingRef.on("value", (snapshot) => {
-      const val = snapshot.val();
-      username = usernameInput.value.trim();
-      if (val && !val.startsWith(username)) {
-        typingStatus.innerText = val;
+    db.ref("typing").on("value", (snap) => {
+      const typer = snap.val();
+      if (typer && typer !== username) {
+        typingStatus.innerText = `${typer} is typing...`;
       } else {
         typingStatus.innerText = "";
       }
     });
 
-    // Online status tracking
-    usernameInput.addEventListener("input", () => {
-      username = usernameInput.value.trim();
-      if (!username) return;
-      const userStatusRef = statusRef.child(username);
-      userStatusRef.set("online");
-      userStatusRef.onDisconnect().set("offline");
+    function sendMessage() {
+      const text = messageInput.value.trim();
+      if (!text || !username) return;
+      const msg = { user: username, text, time: Date.now() };
+      db.ref("messages").push(msg);
+      messageInput.value = "";
+    }
 
-      statusRef.on("value", (snapshot) => {
-        const all = snapshot.val();
-        const others = Object.keys(all || {}).filter(name => name !== username);
-        if (others.length > 0) {
-          const other = others[0];
-          const state = all[other];
-          activeStatus.innerText = `${other} is ${state}`;
-        } else {
-          activeStatus.innerText = "Waiting for other user...";
-        }
-      });
+    db.ref("messages").on("child_added", (snap) => {
+      const msg = snap.val();
+      if (!msg || !msg.text) return;
+      const div = document.createElement("div");
+      const time = new Date(msg.time).toLocaleTimeString();
+      div.className = `message ${msg.user === username ? "you" : "other"}`;
+      div.innerText = `[${time}] ${msg.user}: ${msg.text}`;
+      chatBox.appendChild(div);
+      notifySound.play();
+      chatBox.scrollTop = chatBox.scrollHeight;
+      if (msg.user !== username) {
+        setTimeout(() => snap.ref.remove(), 60000); // delete after 1 min
+      }
     });
-  </script>
-</body>
+
+    function sendImage() {
+      const fileInput = document.getElementById("fileInput");
+      const file = fileInput.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        const msg = { user: username, img: e.target.result, time: Date.now() };
+        db.ref("messages").push(msg);
+      };
+      reader.readAsDataURL(file);
+    }
+
+    function openCamera() {
+      navigator.mediaDevices.getUserMedia({ video: true })
+        .then((stream) => {
+          const track = stream.getVideoTracks()[0];
+          const imageCapture = new ImageCapture(track);
+          return imageCapture.takePhoto();
+        })
+        .then((blob) => {
+          const reader = new FileReader();
+          reader.onloadend = () => {
+            const msg = { user: username, img: reader.result, time: Date.now() };
+            db.ref("messages").push(msg);
+          };
+          reader.readAsDataURL(blob);
+        });
+    }
+
+    db.ref("messages").on("child_added", (snap) => {
+      const msg = snap.val();
+      if (msg.img) {
+        const div = document.createElement("div");
+        div.className = `message ${msg.user === username ? "you" : "other"}`;
+        div.innerHTML = `[${new Date(msg.time).toLocaleTimeString()}] ${msg.user}: <br><img src="${msg.img}" style="max-width: 150px; border-radius: 10px">`;
+        chatBox.appendChild(div);
+        notifySound.play();
+        chatBox.scrollTop = chatBox.scrollHeight;
+        if (msg.user !== username) setTimeout(() => snap.ref.remove(), 60000);
+      }
+    });
+
+    // WebRTC setup (simplified for demo)
+    let localStream, remoteStream;
+    const localVideo = document.getElementById("localVideo");
+    const remoteVideo = document.getElementById("remoteVideo");
+    let peerConnection;
+    const servers = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
+
+    async function startCall() {
+      localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+      localVideo.srcObject = localStream;
+      peerConnection = new RTCPeerConnection(servers);
+      localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
+      peerConnection.ontrack = (e) => remoteVideo.srcObject = e.streams[0];
+      const offer = await peerConnection.createOffer();
+      await peerConnection.setLocalDescription(offer);
+      db.ref("call/offer").set(JSON.stringify(offer));
+    }
+
+    db.ref("call/offer").on("value", async (snap) => {
+      if (!snap.exists() || !username) return;
+      const offer = JSON.parse(snap.val());
+      if (!peerConnection) {
+        localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+        localVideo.srcObject = localStream;
+        peerConnection = new RTCPeerConnection(servers);
+        localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
+        peerConnection.ontrack = (e) => remoteVideo.srcObject = e.streams[0];
+        await peerConnection.setRemoteDescription(offer);
+        const answer = await peerConnection.createAnswer();
+        await peerConnection.setLocalDescription(answer);
+        db.ref("call/answer").set(JSON.stringify(answer));
+      }
+    });
+
+    db.ref("call/answer").on("value", async (snap) => {
+      if (!peerConnection || !snap.exists()) return;
+      const answer = JSON.parse(snap.val());
+      await peerConnection.setRemoteDescription(answer);
+    });
+
+    function endCall() {
+      if (peerConnection) peerConnection.close();
+      localVideo.srcObject = null;
+      remoteVideo.srcObject = null;
+    }
+  </script></body>
 </html>
