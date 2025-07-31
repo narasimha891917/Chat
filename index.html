@@ -1,107 +1,195 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Real-Time 2-Person Chat</title>
+  <title>Chatting</title>
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
   <style>
     body {
-      font-family: Arial, sans-serif;
-      background: #f0f2f5;
+      font-family: 'Segoe UI', sans-serif;
+      background: linear-gradient(to right, #dfe9f3, #ffffff);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
       margin: 0;
-      padding: 20px;
     }
     #chat-container {
-      max-width: 500px;
-      margin: auto;
-      background: white;
+      width: 400px;
+      background: #fff;
+      border-radius: 15px;
+      padding: 20px;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.1);
+    }
+    h2 {
+      text-align: center;
+      color: #333;
+    }
+    #username, #message {
+      width: 100%;
+      padding: 10px;
+      margin-bottom: 10px;
       border-radius: 8px;
-      padding: 15px;
-      box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+      border: 1px solid #ccc;
+    }
+    #send {
+      width: 100%;
+      padding: 10px;
+      background-color: #1e88e5;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+    }
+    #send:hover {
+      background-color: #1565c0;
+    }
+    #typing-status, #active-status {
+      font-size: 13px;
+      color: #888;
+      height: 18px;
+      margin-bottom: 5px;
     }
     #messages {
-      height: 300px;
+      height: 250px;
       overflow-y: auto;
       border: 1px solid #ccc;
+      border-radius: 8px;
       padding: 10px;
+      background: #f9f9f9;
       margin-bottom: 10px;
     }
     .message {
-      margin: 5px 0;
+      margin: 6px 0;
+      font-size: 14px;
     }
     .me {
       text-align: right;
-      color: green;
+      color: #1e88e5;
     }
     .other {
       text-align: left;
-      color: blue;
+      color: #43a047;
     }
-    input, button {
-      padding: 10px;
-      font-size: 14px;
-    }
-    #username {
-      width: 100%;
-      margin-bottom: 10px;
-    }
-    #message {
-      width: 75%;
-    }
-    #send {
-      width: 20%;
+    .timestamp {
+      font-size: 10px;
+      color: gray;
+      display: block;
     }
   </style>
 </head>
 <body>
   <div id="chat-container">
-    <h2>2-Person Real-Time Chat</h2>
+    <h2>Chat with 1-Minute Delete</h2>
     <input type="text" id="username" placeholder="Enter your name" />
+    <div id="active-status"></div>
+    <div id="typing-status"></div>
     <div id="messages"></div>
-    <input type="text" id="message" placeholder="Type a message..." />
+    <input type="text" id="message" placeholder="Type your message..." />
     <button id="send">Send</button>
   </div>
 
   <script>
-  // For Firebase JS SDK v7.20.0 and later, measurementId is optional
-const firebaseConfig = {
-  apiKey: "AIzaSyBlqw_OlPWzL1Gvv4n0068BVlnstoFqdsw",
-  authDomain: "student-attendance-b1e33.firebaseapp.com",
-  databaseURL: "https://student-attendance-b1e33-default-rtdb.firebaseio.com",
-  projectId: "student-attendance-b1e33",
-  storageBucket: "student-attendance-b1e33.firebasestorage.app",
-  messagingSenderId: "601501410721",
-  appId: "1:601501410721:web:809bd651e283675b8c57e0",
-  measurementId: "G-2R0Q549S7B"
-};
+    // ✅ Your Firebase Config Here
+    const firebaseConfig = {
+      apiKey: "YOUR_API_KEY",
+      authDomain: "YOUR_AUTH_DOMAIN",
+      databaseURL: "YOUR_DATABASE_URL",
+      projectId: "YOUR_PROJECT_ID",
+      storageBucket: "YOUR_BUCKET",
+      messagingSenderId: "YOUR_SENDER_ID",
+      appId: "YOUR_APP_ID"
+    };
+
     firebase.initializeApp(firebaseConfig);
     const db = firebase.database();
-
-    const messagesRef = db.ref("chat");
+    const messagesRef = db.ref("chat/messages");
+    const typingRef = db.ref("chat/typing");
+    const statusRef = db.ref("chat/status");
 
     const usernameInput = document.getElementById("username");
     const messageInput = document.getElementById("message");
     const sendButton = document.getElementById("send");
     const messagesDiv = document.getElementById("messages");
+    const typingStatus = document.getElementById("typing-status");
+    const activeStatus = document.getElementById("active-status");
 
+    let username = "";
+
+    // Send message
     sendButton.onclick = () => {
-      const username = usernameInput.value.trim();
-      const message = messageInput.value.trim();
-      if (!username || !message) return;
-      messagesRef.push({ name: username, text: message });
+      username = usernameInput.value.trim();
+      const text = messageInput.value.trim();
+      if (!username || !text) return;
+
+      const timestamp = new Date().toLocaleTimeString();
+
+      messagesRef.push({
+        name: username,
+        text: text,
+        time: timestamp
+      });
+
       messageInput.value = "";
+      typingRef.set("");
     };
 
+    // Display messages and auto-delete after 1 minute (only for receiver)
     messagesRef.on("child_added", (snapshot) => {
       const msg = snapshot.val();
-      const username = usernameInput.value.trim();
-      const isMe = msg.name === username;
+      const key = snapshot.key;
+      username = usernameInput.value.trim();
+      if (!username) return;
 
       const msgDiv = document.createElement("div");
+      const isMe = msg.name === username;
       msgDiv.className = "message " + (isMe ? "me" : "other");
-      msgDiv.innerText = `${msg.name}: ${msg.text}`;
+      msgDiv.innerHTML = `<strong>${isMe ? "You" : msg.name}:</strong> ${msg.text} <span class="timestamp">${msg.time}</span>`;
       messagesDiv.appendChild(msgDiv);
       messagesDiv.scrollTop = messagesDiv.scrollHeight;
+
+      // Delete after 1 minute ONLY if received (not sender)
+      if (!isMe) {
+        setTimeout(() => messagesRef.child(key).remove(), 60000); // 60 sec delay
+      }
+    });
+
+    // Typing indicator
+    messageInput.addEventListener("input", () => {
+      username = usernameInput.value.trim();
+      typingRef.set(username ? `${username} is typing...` : "");
+    });
+    messageInput.addEventListener("blur", () => typingRef.set(""));
+
+    typingRef.on("value", (snapshot) => {
+      const val = snapshot.val();
+      username = usernameInput.value.trim();
+      if (val && !val.startsWith(username)) {
+        typingStatus.innerText = val;
+      } else {
+        typingStatus.innerText = "";
+      }
+    });
+
+    // Online status tracking
+    usernameInput.addEventListener("input", () => {
+      username = usernameInput.value.trim();
+      if (!username) return;
+      const userStatusRef = statusRef.child(username);
+      userStatusRef.set("online");
+      userStatusRef.onDisconnect().set("offline");
+
+      statusRef.on("value", (snapshot) => {
+        const all = snapshot.val();
+        const others = Object.keys(all || {}).filter(name => name !== username);
+        if (others.length > 0) {
+          const other = others[0];
+          const state = all[other];
+          activeStatus.innerText = `${other} is ${state}`;
+        } else {
+          activeStatus.innerText = "Waiting for other user...";
+        }
+      });
     });
   </script>
 </body>
